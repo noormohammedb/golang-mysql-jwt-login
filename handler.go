@@ -29,9 +29,44 @@ type Claims struct {
 
 func home(w http.ResponseWriter, r *http.Request) {
 	log.Println("Home")
-	fmt.Println(jwtKey)
-	fmt.Fprintf(w, "hello from home")
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		// if err == http.ErrNoCookie {
+		// 	log.Println("no token cookie found")
+		// 	w.WriteHeader(http.StatusUnauthorized)
+		// 	w.Write([]byte("unauthorized"))
+		// 	return
+		// }
+		log.Println("no cookie found")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+		return
+	}
 
+	tokenString := cookie.Value
+
+	authClaim := &Claims{}
+
+	jwtObj, err := jwt.ParseWithClaims(tokenString, authClaim, func(jwtToken *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		if err == jwt.ErrSignatureInvalid {
+			log.Println("jwt signature invalid")
+		}
+		log.Println("jwt parse error")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+		return
+	}
+
+	if !jwtObj.Valid {
+		log.Print("jwt token invalid")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}
+
+	w.Write([]byte(fmt.Sprintf("hello, %s", authClaim.Username)))
 }
 
 func login(w http.ResponseWriter, r *http.Request) {
