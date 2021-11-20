@@ -10,7 +10,9 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
-var jwtKey = []byte("jwt_secret_key")
+var jwtTokenKey = []byte("jwt_secret_key")
+
+var jwtRefKey = []byte("jwt_refresh_secret_key")
 
 var users = map[string]string{
 	"user1": "password1",
@@ -22,8 +24,14 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 
-type Claims struct {
+type TokenClaims struct {
 	Username string `json:"username"`
+	jwt.StandardClaims
+}
+
+type RefreshClaims struct {
+	Username       string `json:"username"`
+	IsRefreshToken bool   `json:"isRefresh"`
 	jwt.StandardClaims
 }
 
@@ -45,10 +53,10 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 	tokenString := cookie.Value
 
-	authClaim := &Claims{}
+	authClaim := &TokenClaims{}
 
 	jwtObj, err := jwt.ParseWithClaims(tokenString, authClaim, func(jwtToken *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
+		return jwtTokenKey, nil
 	})
 	if err != nil {
 		if err == jwt.ErrSignatureInvalid {
@@ -90,36 +98,104 @@ func login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expTime := time.Now().Add(time.Minute * 5)
+	expTimeToken := time.Now().Add(time.Minute * 5)      // expire after 5 minutes of creation
+	expTimeRefresh := time.Now().Add(time.Hour * 24 * 5) // expire after 5 days of creation
 
-	newClaim := &Claims{
+	tokenClaim := &TokenClaims{
 		Username: cred.Username,
 		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expTime.Unix(),
+			ExpiresAt: expTimeToken.Unix(),
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS512, newClaim)
-	log.Println(token)
-	tokenString, err := token.SignedString(jwtKey)
+	refreshClaim := &RefreshClaims{
+		Username:       cred.Username,
+		IsRefreshToken: true,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expTimeRefresh.Unix(),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, tokenClaim)
+	refToken := jwt.NewWithClaims(jwt.SigningMethodHS512, refreshClaim)
+
+	// log.Println(token)
+	tokenString, err := token.SignedString(jwtTokenKey)
 	if err != nil {
 		log.Printf("\ntoken signing error %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, "error from login")
 		return
 	}
-	log.Println("signed token : ", tokenString)
+
+	refTokenString, err := refToken.SignedString(jwtRefKey)
+	if err != nil {
+		log.Printf("\nRefresh token signing error %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "error from login")
+		return
+	}
+
+	// log.Println("signed jwt token : ", tokenString)
+	// log.Println("signed refresh token : ", refTokenString)
+
 	http.SetCookie(w,
 		&http.Cookie{
 			Name:    "token",
 			Value:   tokenString,
-			Expires: expTime})
-	log.Printf("parsed json %#v \n", cred)
+			Expires: expTimeToken})
+
+	http.SetCookie(w,
+		&http.Cookie{
+			Name:    "refresh",
+			Value:   refTokenString,
+			Expires: expTimeRefresh})
+
+	// log.Printf("parsed json %#v \n", cred)
+	log.Print("login success, jwt and ref tokens created\n")
 	fmt.Fprintf(w, "Login Success")
 }
 
 func refresh(w http.ResponseWriter, r *http.Request) {
 	log.Println("Refresh")
+
+	// cookie, err := r.Cookie("refresh")
+	// if err != nil {
+	// 	// if err == http.ErrNoCookie {
+	// 	// 	log.Println("no token cookie found")
+	// 	// 	w.WriteHeader(http.StatusUnauthorized)
+	// 	// 	w.Write([]byte("unauthorized"))
+	// 	// 	return
+	// 	// }
+	// 	log.Println("no cookie found")
+	// 	w.WriteHeader(http.StatusUnauthorized)
+	// 	w.Write([]byte("unauthorized"))
+	// 	return
+	// }
+
+	// tokenString := cookie.Value
+
+	// authClaim := &TokenClaims{}
+
+	// jwtObj, err := jwt.ParseWithClaims(tokenString, authClaim, func(jwtToken *jwt.Token) (interface{}, error) {
+	// 	return jwtTokenKey, nil
+	// })
+	// if err != nil {
+	// 	if err == jwt.ErrSignatureInvalid {
+	// 		log.Println("jwt signature invalid")
+	// 	}
+	// 	log.Println("jwt parse error")
+	// 	w.WriteHeader(http.StatusUnauthorized)
+	// 	w.Write([]byte("unauthorized"))
+	// 	return
+	// }
+
+	// if !jwtObj.Valid {
+	// 	log.Print("jwt token invalid")
+	// 	w.WriteHeader(http.StatusUnauthorized)
+	// 	w.Write([]byte("unauthorized"))
+	// }
+
 	fmt.Fprintf(w, "hello from refresh")
 
 }
