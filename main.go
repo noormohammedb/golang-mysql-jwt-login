@@ -14,6 +14,7 @@ func main() {
 	http.HandleFunc("/home", controllers.Home)
 	http.HandleFunc("/login", controllers.Login)
 	http.HandleFunc("/refresh", controllers.Refresh)
+	http.HandleFunc("*", controllers.AllRoute)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
